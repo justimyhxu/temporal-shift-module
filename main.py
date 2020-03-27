@@ -27,8 +27,8 @@ best_prec1 = 0
 def main():
     global args, best_prec1
     args = parser.parse_args()
-
-    num_class, args.train_list, args.val_list, args.root_path, prefix = dataset_config.return_dataset(args.dataset,
+    print(args)
+    num_class, train_list, args.val_list, args.root_path, prefix = dataset_config.return_dataset(args.dataset,
                                                                                                       args.modality)
     full_arch_name = args.arch
     if args.shift:
@@ -139,7 +139,7 @@ def main():
         data_length = 5
 
     train_loader = torch.utils.data.DataLoader(
-        TSNDataSet(args.root_path, args.train_list, num_segments=args.num_segments,
+        TSNDataSet(args.root_path, args.train_list if args.train_list is not None else train_list, num_segments=args.num_segments,
                    new_length=data_length,
                    modality=args.modality,
                    image_tmpl=prefix,

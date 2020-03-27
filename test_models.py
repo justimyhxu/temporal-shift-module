@@ -284,10 +284,14 @@ for i, data_label_pairs in enumerate(zip(*data_iter_list)):
             print('video {} done, total {}/{}, average {:.3f} sec/video, '
                   'moving Prec@1 {:.3f} Prec@5 {:.3f}'.format(i * args.batch_size, i * args.batch_size, total_num,
                                                               float(cnt_time) / (i+1) / args.batch_size, top1.avg, top5.avg))
-
+        # if i % 20 == 0:
+        #     print('video {} done, total {}/{}, average {:.3f} sec/video, '.format(i * args.batch_size, i * args.batch_size, total_num,
+        #                                                      float(cnt_time) / (i+1) / args.batch_size))
 video_pred = [np.argmax(x[0]) for x in output]
 video_pred_top5 = [np.argsort(np.mean(x[0], axis=0).reshape(-1))[::-1][:5] for x in output]
-
+import mmcv
+video_logit = [x[0] for x in output]
+mmcv.dump(video_logit, 'pred.pkl')
 video_labels = [x[1] for x in output]
 
 

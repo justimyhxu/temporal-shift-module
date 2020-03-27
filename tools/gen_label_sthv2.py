@@ -8,7 +8,7 @@
 
 import os
 import json
-
+import sys
 if __name__ == '__main__':
     dataset_name = 'something-something-v2'  # 'jester-v1'
     with open('%s-labels.json' % dataset_name) as f:
@@ -43,8 +43,8 @@ if __name__ == '__main__':
             curFolder = folders[i]
             curIDX = idx_categories[i]
             # counting the number of frames in each video folders
-            dir_files = os.listdir(os.path.join('20bn-something-something-v2-frames', curFolder))
-            output.append('%s %d %d' % (curFolder, len(dir_files), curIDX))
+            dir_files = os.listdir(os.path.join(sys.argv[1], curFolder))
+            output.append('%s %d %d' % (curFolder, int(len(dir_files)//3), curIDX))
             print('%d/%d' % (i, len(folders)))
         with open(filename_output, 'w') as f:
             f.write('\n'.join(output))

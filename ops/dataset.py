@@ -208,6 +208,9 @@ class TSNDataSet(data.Dataset):
                     p += 1
 
         process_data = self.transform(images)
+        # --------------------flip aug for test #import torch
+        import torch
+        process_data = torch.flip(process_data,dims=[-1])
         return process_data, record.label
 
     def __len__(self):
