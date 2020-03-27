@@ -8,7 +8,7 @@ from torch import nn
 from ops.basic_ops import ConsensusModule
 from ops.transforms import *
 from torch.nn.init import normal_, constant_
-
+import ops.resnet_tpn as resnet_tpn
 
 class TSN(nn.Module):
     def __init__(self, num_class, num_segments, modality,
@@ -100,7 +100,36 @@ class TSN(nn.Module):
     def _prepare_base_model(self, base_model):
         print('=> base model: {}'.format(base_model))
 
-        if 'resnet' in base_model:
+        if 'resnet' in base_model and 'tpn' in base_model:
+            _base_model = base_model[:-3]
+            print('Building model TPN {}'.format(base_model))
+            self.base_model = getattr(resnet_tpn, _base_model)(True if self.pretrain == 'imagenet' else False)
+            if self.is_shift:
+                print('Adding temporal shift...')
+                from ops.temporal_shift import make_temporal_shift
+                make_temporal_shift(self.base_model, self.num_segments,
+                                    n_div=self.shift_div, place=self.shift_place, temporal_pool=self.temporal_pool)
+
+            if self.non_local:
+                print('Adding non-local module...')
+                from ops.non_local import make_non_local
+                make_non_local(self.base_model, self.num_segments)
+
+            self.base_model.last_layer_name = 'fc'
+            self.input_size = 224
+            self.input_mean = [0.485, 0.456, 0.406]
+            self.input_std = [0.229, 0.224, 0.225]
+
+            self.base_model.avgpool = nn.AdaptiveAvgPool2d(1)
+
+            if self.modality == 'Flow':
+                self.input_mean = [0.5]
+                self.input_std = [np.mean(self.input_std)]
+            elif self.modality == 'RGBDiff':
+                self.input_mean = [0.485, 0.456, 0.406] + [0] * 3 * self.new_length
+                self.input_std = self.input_std + [np.mean(self.input_std) * 2] * 3 * self.new_length
+
+        elif 'resnet' in base_model:
             self.base_model = getattr(torchvision.models, base_model)(True if self.pretrain == 'imagenet' else False)
             if self.is_shift:
                 print('Adding temporal shift...')
@@ -268,9 +297,14 @@ class TSN(nn.Module):
                 sample_len = 3 * self.new_length
                 input = self._get_diff(input)
 
-            base_out = self.base_model(input.view((-1, sample_len) + input.size()[-2:]))
+            base_out= self.base_model(input.view((-1, sample_len) + input.size()[-2:]))
         else:
             base_out = self.base_model(input)
+
+        if 'tpn' in self.base_model_name:
+            base_out, aux_losses = base_out
+        else:
+            aux_losses = None
 
         if self.dropout > 0:
             base_out = self.new_fc(base_out)
@@ -282,9 +316,12 @@ class TSN(nn.Module):
             if self.is_shift and self.temporal_pool:
                 base_out = base_out.view((-1, self.num_segments // 2) + base_out.size()[1:])
             else:
-                base_out = base_out.view((-1, self.num_segments) + base_out.size()[1:])
+                if 'tpn' in self.base_model_name:
+                    base_out = base_out.view((-1, 1) + base_out.size()[1:])
+                else:
+                    base_out = base_out.view((-1, self.num_segments) + base_out.size()[1:])
             output = self.consensus(base_out)
-            return output.squeeze(1)
+            return (output.squeeze(1), aux_losses)
 
     def _get_diff(self, input, keep_rgb=False):
         input_c = 3 if self.modality in ["RGB", "RGBDiff"] else 2

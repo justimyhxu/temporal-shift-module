@@ -219,7 +219,9 @@ def main():
 def train(train_loader, model, criterion, optimizer, epoch, log, tf_writer):
     batch_time = AverageMeter()
     data_time = AverageMeter()
+    aux_losses = AverageMeter()
     losses = AverageMeter()
+    sum_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
@@ -241,17 +243,20 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tf_writer):
         target_var = torch.autograd.Variable(target)
 
         # compute output
-        output = model(input_var)
+        output, aux_loss = model(input_var)
         loss = criterion(output, target_var)
-
+        aux_loss = aux_loss if aux_loss is not None else loss.new_tensor([0])
+        sum_loss = loss + aux_loss
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+        aux_losses.update(aux_loss.item(), input.size(0))
         losses.update(loss.item(), input.size(0))
+        sum_losses.update(sum_loss.item(), input.size(0))
         top1.update(prec1.item(), input.size(0))
         top5.update(prec5.item(), input.size(0))
 
         # compute gradient and do SGD step
-        loss.backward()
+        sum_loss.backward()
 
         if args.clip_gradient is not None:
             total_norm = clip_grad_norm_(model.parameters(), args.clip_gradient)
@@ -267,11 +272,13 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tf_writer):
             output = ('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t',
+                      'Aux Loss {aux_loss.val:.4f} ({aux_loss.avg:.4f})\t',
+                      'Sum Loss {sum_loss.val:.4f} ({sum_loss.avg:.4f})\t',
+                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t',
                       'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                 epoch, i, len(train_loader), batch_time=batch_time,
-                data_time=data_time, loss=losses, top1=top1, top5=top5, lr=optimizer.param_groups[-1]['lr'] * 0.1))  # TODO
+                data_time=data_time, loss=losses, aux_loss=aux_losses, sum_loss=sum_losses, top1=top1, top5=top5, lr=optimizer.param_groups[-1]['lr'] * 0.1))  # TODO
             print(output)
             log.write(output + '\n')
             log.flush()
@@ -284,7 +291,9 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tf_writer):
 
 def validate(val_loader, model, criterion, epoch, log=None, tf_writer=None):
     batch_time = AverageMeter()
+    aux_losses = AverageMeter()
     losses = AverageMeter()
+    sum_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
@@ -297,13 +306,17 @@ def validate(val_loader, model, criterion, epoch, log=None, tf_writer=None):
             target = target.cuda()
 
             # compute output
-            output = model(input)
+            output, aux_losses = model(input)
             loss = criterion(output, target)
+            aux_loss = aux_loss if aux_loss is not None else loss.new_tensor([0])
+            sum_loss = loss + aux_loss
 
             # measure accuracy and record loss
             prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
 
+            aux_losses.update(aux_loss.item(), input.size(0))
             losses.update(loss.item(), input.size(0))
+            sum_losses.update(sum_loss.item(), input.size(0))
             top1.update(prec1.item(), input.size(0))
             top5.update(prec5.item(), input.size(0))
 
@@ -314,10 +327,12 @@ def validate(val_loader, model, criterion, epoch, log=None, tf_writer=None):
             if i % args.print_freq == 0:
                 output = ('Test: [{0}/{1}]\t'
                           'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                          'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                          'Loss {loss.val:.4f} ({loss.avg:.4f})\t',
+                          'Aux Loss {aux_loss.val:.4f} ({aux_loss.avg:.4f})\t',
+                          'Sum Loss {sum_loss.val:.4f} ({sum_loss.avg:.4f})\t',
                           'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
                           'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                    i, len(val_loader), batch_time=batch_time, loss=losses,
+                    i, len(val_loader), batch_time=batch_time, loss=losses, aux_loss=aux_losses, sum_loss=sum_losses,
                     top1=top1, top5=top5))
                 print(output)
                 if log is not None:
